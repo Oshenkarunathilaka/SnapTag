@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { getApiUrl } from '../config';
 
 export default function PreviewPanel({
   baseImage, tagImage,
@@ -54,7 +55,7 @@ export default function PreviewPanel({
         onPointerLeave={() => setDragging(false)}
       >
         <img
-          src={`http://localhost:3001/api/uploads/${baseImage.filename}`}
+          src={getApiUrl(`/api/uploads/${baseImage.filename}`)}
           alt="Base preview"
           style={{ display: 'block', width: '100%', maxHeight: 420, objectFit: 'contain' }}
           draggable={false}
@@ -62,7 +63,7 @@ export default function PreviewPanel({
 
         {tagType === 'image' && tagImage && (
           <img
-            src={`http://localhost:3001/api/tags/${tagImage.filename}`}
+            src={getApiUrl(`/api/tags/${tagImage.filename}`)}
             alt="Watermark"
             draggable={false}
             style={{

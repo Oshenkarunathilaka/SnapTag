@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { Upload, X } from 'lucide-react';
+import { getApiUrl, getErrorMessage } from '../config';
 
 export default function TagSettings({
   tagImage, setTagImage,
@@ -19,10 +20,21 @@ export default function TagSettings({
     const fd = new FormData();
     fd.append('tag', file);
     try {
-      const res  = await fetch('http://localhost:3001/api/upload-tag', { method: 'POST', body: fd });
+      const res  = await fetch(getApiUrl('/api/upload-tag'), { method: 'POST', body: fd });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        let msg = `Server error (Status ${res.status})`;
+        try {
+          const data = JSON.parse(text);
+          if (data.error) msg = data.error;
+        } catch {
+          if (text && text.length < 200 && !text.includes('<!DOCTYPE')) msg = text;
+        }
+        throw new Error(msg);
+      }
       const data = await res.json();
       if (data.tag) setTagImage(data.tag);
-    } catch { alert('Failed to upload tag.'); }
+    } catch (err) { alert('Failed to upload tag: ' + getErrorMessage(err)); }
   };
 
   const positions = [
@@ -63,7 +75,7 @@ export default function TagSettings({
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-2)' }}>
-              <img src={`http://localhost:3001/api/tags/${tagImage.filename}`} alt="Tag" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4 }} />
+              <img src={getApiUrl(`/api/tags/${tagImage.filename}`)} alt="Tag" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4 }} />
               <div style={{ flex: 1, overflow: 'hidden' }}>
                 <p style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tagImage.originalName}</p>
                 <p style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>✓ Ready</p>

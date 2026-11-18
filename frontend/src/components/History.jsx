@@ -1,10 +1,11 @@
 import React from 'react';
 import { Trash2, History as HistoryIcon, ImageIcon } from 'lucide-react';
+import { getApiUrl } from '../config';
 
 export default function History({ images, setImages }) {
   const handleRemove = async (id) => {
     try {
-      await fetch('http://localhost:3001/api/remove-image', {
+      await fetch(getApiUrl('/api/remove-image'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
@@ -17,7 +18,7 @@ export default function History({ images, setImages }) {
 
   const clearAll = async () => {
     try {
-      await fetch('http://localhost:3001/api/clear', {
+      await fetch(getApiUrl('/api/clear'), {
         method: 'POST',
       });
       setImages([]);
@@ -67,7 +68,7 @@ export default function History({ images, setImages }) {
                   boxShadow: 'var(--shadow-sm)'
                 }}>
                   <img 
-                    src={`http://localhost:3001/api/uploads/${img.filename}`} 
+                    src={getApiUrl(`/api/uploads/${img.filename}`)} 
                     alt={img.originalName} 
                     style={{ width: '100%', height: '120px', objectFit: 'cover' }} 
                   />

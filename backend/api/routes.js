@@ -7,26 +7,34 @@ const { processImage } = require('../image-processor/processor');
 
 const router = express.Router();
 
-// Ensure directories exist
+// Ensure directories exist safely
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 const TAGS_DIR = path.join(__dirname, '../../tags');
 const OUTPUT_DIR = path.join(__dirname, '../../output');
 
-[UPLOADS_DIR, TAGS_DIR, OUTPUT_DIR].forEach(dir => {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-});
+function ensureDirExists(dir) {
+    try {
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+        console.warn(`Warning: Could not create directory ${dir}:`, err.message);
+    }
+}
 
-// Configure Multer storage
+[UPLOADS_DIR, TAGS_DIR, OUTPUT_DIR].forEach(ensureDirExists);
+
+// Configure Multer storage with safe filename handling (Windows MAX_PATH & invalid char protection)
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        if (file.fieldname === 'tag') {
-            cb(null, TAGS_DIR);
-        } else {
-            cb(null, UPLOADS_DIR);
-        }
+        const dest = (file.fieldname === 'tag') ? TAGS_DIR : UPLOADS_DIR;
+        ensureDirExists(dest);
+        cb(null, dest);
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '_'));
+        const ext = path.extname(file.originalname).slice(0, 10) || '.jpg';
+        const rawName = path.basename(file.originalname, ext);
+        // Replace spaces and characters forbidden on Windows (<>:"/\|?*)
+        const safeBaseName = rawName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+        cb(null, `${Date.now()}-${safeBaseName}${ext}`);
     }
 });
 
@@ -46,8 +54,8 @@ const uploadImagesHandler = upload.array('images', 5000);
 router.post('/upload-images', (req, res) => {
     uploadImagesHandler(req, res, (err) => {
         if (err) {
-            console.error("Multer error:", err);
-            return res.status(400).json({ error: err.message });
+            console.error("Multer error during /upload-images:", err);
+            return res.status(400).json({ error: err.message || 'Image upload error' });
         }
         
         try {
@@ -66,27 +74,35 @@ router.post('/upload-images', (req, res) => {
             
             res.json({ message: 'Images uploaded successfully', images: sessionData.images });
         } catch (err) {
-            res.status(500).json({ error: err.message });
+            console.error("Server error handling uploaded files:", err);
+            res.status(500).json({ error: err.message || 'Server error processing images' });
         }
     });
 });
 
 // 2. Upload Tag PNG
-router.post('/upload-tag', upload.single('tag'), (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No tag uploaded.' });
+router.post('/upload-tag', (req, res) => {
+    upload.single('tag')(req, res, (err) => {
+        if (err) {
+            console.error("Multer error during /upload-tag:", err);
+            return res.status(400).json({ error: err.message || 'Tag upload error' });
         }
-        sessionData.tag = {
-            id: req.file.filename,
-            originalName: req.file.originalname,
-            path: req.file.path,
-            filename: req.file.filename
-        };
-        res.json({ message: 'Tag uploaded successfully', tag: sessionData.tag });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+        try {
+            if (!req.file) {
+                return res.status(400).json({ error: 'No tag uploaded.' });
+            }
+            sessionData.tag = {
+                id: req.file.filename,
+                originalName: req.file.originalname,
+                path: req.file.path,
+                filename: req.file.filename
+            };
+            res.json({ message: 'Tag uploaded successfully', tag: sessionData.tag });
+        } catch (err) {
+            console.error("Server error handling tag file:", err);
+            res.status(500).json({ error: err.message || 'Server error processing tag' });
+        }
+    });
 });
 
 // 3. Clear Session / Remove specific images
@@ -133,10 +149,12 @@ router.post('/process', express.json(), async (req, res) => {
             y: customY
         };
 
+        ensureDirExists(OUTPUT_DIR);
+
         for (const img of sessionData.images) {
-            // Generate output filename
-            const ext = path.extname(img.originalName);
-            const baseName = path.basename(img.originalName, ext);
+            // Generate safe output filename
+            const ext = path.extname(img.originalName).slice(0, 10) || '.jpg';
+            const baseName = path.basename(img.originalName, ext).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
             const outputFilename = `${baseName}_tagged${ext}`;
             const outputPath = path.join(OUTPUT_DIR, outputFilename);
             

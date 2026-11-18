@@ -6,6 +6,7 @@ import {
 import ImageUpload from './ImageUpload';
 import TagSettings from './TagSettings';
 import PreviewPanel from './PreviewPanel';
+import { getApiUrl } from '../config';
 
 export default function Dashboard({ images, setImages }) {
   const [tagImage, setTagImage]     = useState(null);
@@ -36,7 +37,7 @@ export default function Dashboard({ images, setImages }) {
     const config = { tagType, tagText, tagColor, tagOpacity, customPos, position: tagPosition, scale: tagScale };
 
     try {
-      const resp = await fetch('http://localhost:3001/api/process', {
+      const resp = await fetch(getApiUrl('/api/process'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -62,7 +63,7 @@ export default function Dashboard({ images, setImages }) {
   };
 
   const handleDownload = () => {
-    window.location.href = 'http://localhost:3001/api/download-zip';
+    window.location.href = getApiUrl('/api/download-zip');
   };
 
   return (
@@ -166,7 +167,7 @@ export default function Dashboard({ images, setImages }) {
                   {processedImages.map((filename, i) => (
                     <a
                       key={i}
-                      href={`http://localhost:3001/api/output/${filename}`}
+                      href={getApiUrl(`/api/output/${filename}`)}
                       download={filename}
                       target="_blank"
                       rel="noreferrer"
@@ -174,7 +175,7 @@ export default function Dashboard({ images, setImages }) {
                       title={filename}
                     >
                       <img
-                        src={`http://localhost:3001/api/output/${filename}`}
+                        src={getApiUrl(`/api/output/${filename}`)}
                         alt={filename}
                         onError={e => { e.target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" fill="%23e2e8f0"><rect width="96" height="96"/></svg>'; }}
                       />

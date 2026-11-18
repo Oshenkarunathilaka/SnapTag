@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { UploadCloud, X, Plus } from 'lucide-react';
+import { getApiUrl, getErrorMessage } from '../config';
 
 export default function ImageUpload({ images, setImages }) {
   const [isDragging, setIsDragging]   = useState(false);
@@ -20,15 +21,27 @@ export default function ImageUpload({ images, setImages }) {
       for (let i = 0; i < valid.length; i += BATCH) {
         const fd = new FormData();
         valid.slice(i, i + BATCH).forEach(f => fd.append('images', f));
-        const res  = await fetch('http://localhost:3001/api/upload-images', { method: 'POST', body: fd });
+        const res  = await fetch(getApiUrl('/api/upload-images'), { method: 'POST', body: fd });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          let msg = `Server error (Status ${res.status})`;
+          try {
+            const data = JSON.parse(text);
+            if (data.error) msg = data.error;
+          } catch {
+            if (text && text.length < 200 && !text.includes('<!DOCTYPE')) {
+              msg = text;
+            }
+          }
+          throw new Error(msg);
+        }
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Server error');
         if (data.images) latest = data.images;
       }
       if (latest.length) setImages(latest);
     } catch (err) {
       console.error(err);
-      alert('Failed to upload images: ' + (err.message || 'Network Error'));
+      alert('Failed to upload images: ' + getErrorMessage(err));
     } finally {
       setIsUploading(false);
       setIsDragging(false);
@@ -37,7 +50,7 @@ export default function ImageUpload({ images, setImages }) {
 
   const handleRemove = async (id) => {
     try {
-      await fetch('http://localhost:3001/api/remove-image', {
+      await fetch(getApiUrl('/api/remove-image'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       });
@@ -97,7 +110,7 @@ export default function ImageUpload({ images, setImages }) {
             {images.map(img => (
               <div key={img.id} className="image-thumb">
                 <img
-                  src={`http://localhost:3001/api/uploads/${img.filename}`}
+                  src={getApiUrl(`/api/uploads/${img.filename}`)}
                   alt={img.originalName}
                   onError={e => { e.target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" fill="%23e2e8f0"><rect width="96" height="96"/></svg>'; }}
                 />
