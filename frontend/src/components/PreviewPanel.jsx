@@ -1,5 +1,4 @@
-import React, { useRef, useState } from 'react';
-import { getApiUrl } from '../config';
+import React, { useRef, useState, useEffect } from 'react';
 
 export default function PreviewPanel({
   baseImage, tagImage,
@@ -10,21 +9,46 @@ export default function PreviewPanel({
 }) {
   const containerRef = useRef(null);
   const [dragging, setDragging] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(600);
+
+  // Keep track of container width for accurate font scaling
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+    updateSize();
+
+    let resizeObserver = null;
+    if (window.ResizeObserver && containerRef.current) {
+      resizeObserver = new ResizeObserver(() => updateSize());
+      resizeObserver.observe(containerRef.current);
+    } else {
+      window.addEventListener('resize', updateSize);
+    }
+
+    return () => {
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
+  }, []);
 
   const getPos = () => {
     if (position === 'custom' && customPos) {
       return { top: `${customPos.y}%`, left: `${customPos.x}%`, transform: 'translate(-50%,-50%)' };
     }
     switch (position) {
-      case 'top-left':     return { top: 0, left: 0 };
-      case 'top-right':    return { top: 0, right: 0 };
-      case 'bottom-left':  return { bottom: 0, left: 0 };
+      case 'top-left':     return { top: '2%', left: '2%' };
+      case 'top-right':    return { top: '2%', right: '2%' };
+      case 'bottom-left':  return { bottom: '2%', left: '2%' };
       case 'center':       return { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' };
-      default:             return { bottom: 0, right: 0 };
+      case 'bottom-right':
+      default:             return { bottom: '2%', right: '2%' };
     }
   };
 
-  const update = (cx, cy) => {
+  const updatePosition = (cx, cy) => {
     if (!containerRef.current) return;
     const r = containerRef.current.getBoundingClientRect();
     const x = Math.max(0, Math.min(100, ((cx - r.left)  / r.width)  * 100));
@@ -33,7 +57,13 @@ export default function PreviewPanel({
     setCustomPos({ x, y });
   };
 
-  const ops = tagOpacity / 100;
+  const ops = Math.max(0, Math.min(1, tagOpacity / 100));
+
+  // Compute text font size matching watermarkEngine canvas logic
+  const calculatedFontSize = Math.max(12, Math.round((containerWidth || 600) * (Number(scale) / 1000)));
+
+  const baseSrc = baseImage?.previewUrl || '';
+  const tagSrc = tagImage?.previewUrl || '';
 
   return (
     <div>
@@ -43,44 +73,80 @@ export default function PreviewPanel({
       <div
         ref={containerRef}
         style={{
-          position: 'relative', display: 'inline-block',
-          maxWidth: '100%', width: '100%',
-          borderRadius: 'var(--radius-sm)', overflow: 'hidden',
-          boxShadow: 'var(--shadow-lg)', cursor: dragging ? 'grabbing' : 'crosshair',
+          position: 'relative',
+          display: 'inline-block',
+          maxWidth: '100%',
+          width: '100%',
+          borderRadius: 'var(--radius-sm)',
+          overflow: 'hidden',
+          boxShadow: 'var(--shadow-lg)',
+          cursor: dragging ? 'grabbing' : 'crosshair',
           touchAction: 'none',
+          userSelect: 'none',
         }}
-        onPointerDown={e => { e.preventDefault(); setDragging(true); update(e.clientX, e.clientY); }}
-        onPointerMove={e => { if (!dragging) return; update(e.clientX, e.clientY); }}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          setDragging(true);
+          updatePosition(e.clientX, e.clientY);
+        }}
+        onPointerMove={(e) => {
+          if (!dragging) return;
+          updatePosition(e.clientX, e.clientY);
+        }}
         onPointerUp={() => setDragging(false)}
         onPointerLeave={() => setDragging(false)}
       >
         <img
-          src={getApiUrl(`/api/uploads/${baseImage.filename}`)}
+          src={baseSrc}
           alt="Base preview"
           style={{ display: 'block', width: '100%', maxHeight: 420, objectFit: 'contain' }}
           draggable={false}
+          onLoad={(e) => {
+            if (e.target.clientWidth) setContainerWidth(e.target.clientWidth);
+          }}
+          onError={(e) => {
+            e.target.src =
+              'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" fill="%23f1f5f9"><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%2394a3b8" font-family="sans-serif">Preview unavailable</text></svg>';
+          }}
         />
 
-        {tagType === 'image' && tagImage && (
+        {tagType === 'image' && tagSrc && (
           <img
-            src={getApiUrl(`/api/tags/${tagImage.filename}`)}
+            src={tagSrc}
             alt="Watermark"
             draggable={false}
             style={{
-              position: 'absolute', width: `${scale}%`, height: 'auto',
-              objectFit: 'contain', opacity: ops, pointerEvents: 'none',
+              position: 'absolute',
+              width: `${scale}%`,
+              height: 'auto',
+              objectFit: 'contain',
+              opacity: ops,
+              pointerEvents: 'none',
               ...getPos(),
             }}
           />
         )}
 
         {tagType === 'text' && tagText && (
-          <div style={{ position: 'absolute', opacity: ops, pointerEvents: 'none', whiteSpace: 'nowrap', ...getPos() }}>
-            <span style={{
-              fontSize: `${scale / 10}em`, fontWeight: 800,
-              color: tagColor, textShadow: '0 2px 6px rgba(0,0,0,.5)',
-              fontFamily: 'Inter, sans-serif',
-            }}>
+          <div
+            style={{
+              position: 'absolute',
+              opacity: ops,
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap',
+              ...getPos(),
+            }}
+          >
+            <span
+              style={{
+                fontSize: `${calculatedFontSize}px`,
+                fontWeight: 800,
+                color: tagColor || '#ffffff',
+                textShadow: '0 2px 6px rgba(0,0,0,.55)',
+                fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                lineHeight: 1,
+              }}
+            >
               {tagText}
             </span>
           </div>

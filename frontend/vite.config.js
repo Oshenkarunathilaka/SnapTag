@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import fs from 'fs'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -28,7 +31,7 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:3001',
         changeOrigin: true,
-        configure: (proxy, options) => {
+        configure: (proxy) => {
           proxy.on('error', (err, req, res) => {
             console.error('[Vite Proxy Error]:', err.message);
             if (!res.headersSent) {

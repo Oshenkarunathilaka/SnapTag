@@ -1,28 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  Image as ImageIcon, Tag, Settings2, Play, Download,
+  Image as ImageIcon, Tag, Settings2, Download,
   RefreshCcw, CheckCircle, Sliders, Zap, XCircle
 } from 'lucide-react';
 import ImageUpload from './ImageUpload';
 import TagSettings from './TagSettings';
 import PreviewPanel from './PreviewPanel';
-import { getApiUrl } from '../config';
+import { batchWatermarkAndZip, downloadFile } from '../utils/watermarkEngine';
 
 export default function Dashboard({ images, setImages }) {
-  const [tagImage, setTagImage]     = useState(null);
-  const [tagPosition, setTagPosition] = useState('bottom-right');
-  const [tagScale, setTagScale]     = useState(25);
-  const [tagType, setTagType]       = useState('image');
-  const [tagText, setTagText]       = useState('');
-  const [tagColor, setTagColor]     = useState('#ffffff');
-  const [tagOpacity, setTagOpacity] = useState(100);
-  const [customPos, setCustomPos]   = useState(null);
+  const [tagImage, setTagImage]         = useState(null);
+  const [tagPosition, setTagPosition]   = useState('bottom-right');
+  const [tagScale, setTagScale]         = useState(25);
+  const [tagType, setTagType]           = useState('image');
+  const [tagText, setTagText]           = useState('');
+  const [tagColor, setTagColor]         = useState('#ffffff');
+  const [tagOpacity, setTagOpacity]     = useState(100);
+  const [customPos, setCustomPos]       = useState(null);
 
-  const [isProcessing, setIsProcessing]   = useState(false);
-  const [processStatus, setProcessStatus] = useState('idle'); // idle | processing | done | error
-  const [processedCount, setProcessedCount]   = useState(0);
-  const [processedImages, setProcessedImages] = useState([]);
-  const [showOverlay, setShowOverlay]     = useState(false);
+  const [isProcessing, setIsProcessing]           = useState(false);
+  const [processStatus, setProcessStatus]         = useState('idle'); // idle | processing | done | error
+  const [processedCount, setProcessedCount]       = useState(0);
+  const [progressPercent, setProgressPercent]     = useState(0);
+  const [currentProcessingName, setCurrentProcessingName] = useState('');
+  const [processedImages, setProcessedImages]     = useState([]);
+  const [zipBlob, setZipBlob]                     = useState(null);
+  const [showOverlay, setShowOverlay]             = useState(false);
+
+  // Refs for safe cleanup of object URLs on unmount without stale closures
+  const processedImagesRef = useRef(processedImages);
+  processedImagesRef.current = processedImages;
+  const tagImageRef = useRef(tagImage);
+  tagImageRef.current = tagImage;
+
+  useEffect(() => {
+    return () => {
+      processedImagesRef.current.forEach((img) => {
+        if (img?.previewUrl) URL.revokeObjectURL(img.previewUrl);
+      });
+      if (tagImageRef.current?.previewUrl) {
+        URL.revokeObjectURL(tagImageRef.current.previewUrl);
+      }
+    };
+  }, []);
 
   const canProcess =
     images.length > 0 &&
@@ -30,40 +50,66 @@ export default function Dashboard({ images, setImages }) {
 
   const handleStart = async () => {
     if (!canProcess) return;
+
+    // Revoke previous processed URLs before new batch run
+    if (processedImages.length > 0) {
+      processedImages.forEach((img) => {
+        if (img?.previewUrl) URL.revokeObjectURL(img.previewUrl);
+      });
+    }
+
     setIsProcessing(true);
     setProcessStatus('processing');
     setShowOverlay(true);
+    setProcessedCount(0);
+    setProgressPercent(0);
+    setCurrentProcessingName('');
 
-    const config = { tagType, tagText, tagColor, tagOpacity, customPos, position: tagPosition, scale: tagScale };
+    const config = {
+      tagType,
+      tagText,
+      tagColor,
+      tagOpacity,
+      customPos,
+      position: tagPosition,
+      scale: tagScale,
+    };
 
     try {
-      const resp = await fetch(getApiUrl('/api/process'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-      const data = await resp.json();
-      if (resp.ok) {
-        setProcessStatus('done');
-        setProcessedCount(data.processedCount);
-        setProcessedImages(data.processedImages || []);
-        // Keep overlay showing the success for 1.8 seconds then dismiss
-        setTimeout(() => setShowOverlay(false), 1800);
-      } else {
-        setProcessStatus('error');
-        setTimeout(() => { setShowOverlay(false); setProcessStatus('idle'); }, 2200);
-      }
+      const result = await batchWatermarkAndZip(
+        images,
+        config,
+        tagImage,
+        ({ current, percent, filename }) => {
+          setProcessedCount(current);
+          setProgressPercent(percent);
+          setCurrentProcessingName(filename);
+        }
+      );
+
+      setZipBlob(result.zipBlob);
+      setProcessedImages(result.processedImages);
+      setProcessedCount(result.processedImages.length);
+      setProcessStatus('done');
+
+      // Keep overlay showing the success for 1.8 seconds then dismiss
+      setTimeout(() => setShowOverlay(false), 1800);
     } catch (err) {
-      console.error(err);
+      console.error('Watermark processing error:', err);
       setProcessStatus('error');
-      setTimeout(() => { setShowOverlay(false); setProcessStatus('idle'); }, 2200);
+      setTimeout(() => {
+        setShowOverlay(false);
+        setProcessStatus('idle');
+      }, 2500);
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleDownload = () => {
-    window.location.href = getApiUrl('/api/download-zip');
+    if (zipBlob) {
+      downloadFile(zipBlob, 'snaptag_results.zip');
+    }
   };
 
   return (
@@ -76,7 +122,7 @@ export default function Dashboard({ images, setImages }) {
           <p className="page-subtitle">Upload images → configure watermark → process & download</p>
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
-          {processStatus === 'done' && (
+          {processStatus === 'done' && zipBlob && (
             <button className="btn btn-success btn-lg" onClick={handleDownload}>
               <Download size={18} /> Download ZIP
             </button>
@@ -164,20 +210,21 @@ export default function Dashboard({ images, setImages }) {
               </div>
               <div className="card-body">
                 <div className="image-grid">
-                  {processedImages.map((filename, i) => (
+                  {processedImages.map((imgItem, i) => (
                     <a
                       key={i}
-                      href={getApiUrl(`/api/output/${filename}`)}
-                      download={filename}
-                      target="_blank"
-                      rel="noreferrer"
+                      href={imgItem.previewUrl}
+                      download={imgItem.filename}
                       className="image-thumb"
-                      title={filename}
+                      title={imgItem.filename}
                     >
                       <img
-                        src={getApiUrl(`/api/output/${filename}`)}
-                        alt={filename}
-                        onError={e => { e.target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" fill="%23e2e8f0"><rect width="96" height="96"/></svg>'; }}
+                        src={imgItem.previewUrl}
+                        alt={imgItem.filename}
+                        onError={(e) => {
+                          e.target.src =
+                            'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" fill="%23e2e8f0"><rect width="96" height="96"/></svg>';
+                        }}
                       />
                     </a>
                   ))}
@@ -265,10 +312,18 @@ export default function Dashboard({ images, setImages }) {
                 Processing Images…
               </p>
               <p style={{ fontSize: 14, color: 'var(--text-600)', marginBottom: 4 }}>
-                Applying watermark to {images.length} image{images.length !== 1 ? 's' : ''}
+                Applying watermark to {images.length} image{images.length !== 1 ? 's' : ''} ({processedCount}/{images.length})
               </p>
+              {currentProcessingName && (
+                <p style={{ fontSize: 12, color: 'var(--text-400)', marginBottom: 8, maxWidth: 280, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  {currentProcessingName}
+                </p>
+              )}
               <div className="progress-bar-wrap">
-                <div className="progress-bar-fill" />
+                <div
+                  className="progress-bar-fill"
+                  style={{ width: `${progressPercent}%`, transition: 'width 0.25s ease-out' }}
+                />
               </div>
               <div className="processing-dots">
                 <div className="processing-dot" />
@@ -299,7 +354,7 @@ export default function Dashboard({ images, setImages }) {
                 Processing Failed
               </p>
               <p style={{ fontSize: 14, color: 'var(--text-600)' }}>
-                Check the server logs and try again.
+                Please ensure your images are valid and try again.
               </p>
             </>)}
           </div>

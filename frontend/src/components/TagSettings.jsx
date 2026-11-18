@@ -1,6 +1,5 @@
 import React, { useRef } from 'react';
 import { Upload, X } from 'lucide-react';
-import { getApiUrl, getErrorMessage } from '../config';
 
 export default function TagSettings({
   tagImage, setTagImage,
@@ -13,28 +12,37 @@ export default function TagSettings({
 }) {
   const fileRef = useRef(null);
 
-  const handleTagUpload = async (e) => {
+  const handleTagUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.type !== 'image/png') { alert('Only PNG files are supported.'); return; }
-    const fd = new FormData();
-    fd.append('tag', file);
-    try {
-      const res  = await fetch(getApiUrl('/api/upload-tag'), { method: 'POST', body: fd });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        let msg = `Server error (Status ${res.status})`;
-        try {
-          const data = JSON.parse(text);
-          if (data.error) msg = data.error;
-        } catch {
-          if (text && text.length < 200 && !text.includes('<!DOCTYPE')) msg = text;
-        }
-        throw new Error(msg);
-      }
-      const data = await res.json();
-      if (data.tag) setTagImage(data.tag);
-    } catch (err) { alert('Failed to upload tag: ' + getErrorMessage(err)); }
+
+    if (file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) {
+      alert('Only PNG files are supported for watermarks.');
+      return;
+    }
+
+    if (tagImage?.previewUrl) {
+      URL.revokeObjectURL(tagImage.previewUrl);
+    }
+
+    const newTag = {
+      id: `${Date.now()}-${file.name}`,
+      file,
+      originalName: file.name,
+      filename: file.name,
+      previewUrl: URL.createObjectURL(file),
+    };
+
+    setTagImage(newTag);
+    // Reset file input so re-selecting same file works
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const handleRemoveTag = () => {
+    if (tagImage?.previewUrl) {
+      URL.revokeObjectURL(tagImage.previewUrl);
+    }
+    setTagImage(null);
   };
 
   const positions = [
@@ -52,10 +60,16 @@ export default function TagSettings({
       <div>
         <label className="form-label">Watermark Type</label>
         <div className="segment-control">
-          <button className={`segment-btn ${tagType === 'image' ? 'active' : ''}`} onClick={() => setTagType('image')}>
+          <button
+            className={`segment-btn ${tagType === 'image' ? 'active' : ''}`}
+            onClick={() => setTagType('image')}
+          >
             Image PNG
           </button>
-          <button className={`segment-btn ${tagType === 'text' ? 'active' : ''}`} onClick={() => setTagType('text')}>
+          <button
+            className={`segment-btn ${tagType === 'text' ? 'active' : ''}`}
+            onClick={() => setTagType('text')}
+          >
             Text Stamp
           </button>
         </div>
@@ -67,25 +81,69 @@ export default function TagSettings({
           <label className="form-label">Select PNG File</label>
           {!tagImage ? (
             <div className="tag-upload-zone" onClick={() => fileRef.current?.click()}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  background: 'var(--primary-light)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <Upload size={18} color="var(--primary)" />
               </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary)' }}>Choose PNG Watermark</span>
-              <span style={{ fontSize: 11, color: 'var(--text-400)' }}>Only .png with transparency</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary)' }}>
+                Choose PNG Watermark
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-400)' }}>
+                Only .png with transparency
+              </span>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-2)' }}>
-              <img src={getApiUrl(`/api/tags/${tagImage.filename}`)} alt="Tag" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4 }} />
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '12px 14px',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--surface-2)',
+              }}
+            >
+              <img
+                src={tagImage.previewUrl}
+                alt="Tag"
+                style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4 }}
+              />
               <div style={{ flex: 1, overflow: 'hidden' }}>
-                <p style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tagImage.originalName}</p>
+                <p
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {tagImage.originalName}
+                </p>
                 <p style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>✓ Ready</p>
               </div>
-              <button className="btn btn-ghost" onClick={() => setTagImage(null)} style={{ padding: 6 }}>
+              <button className="btn btn-ghost" onClick={handleRemoveTag} style={{ padding: 6 }}>
                 <X size={16} />
               </button>
             </div>
           )}
-          <input ref={fileRef} type="file" accept="image/png" style={{ display: 'none' }} onChange={handleTagUpload} />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png"
+            style={{ display: 'none' }}
+            onChange={handleTagUpload}
+          />
         </div>
       ) : (
         <div>
@@ -96,12 +154,21 @@ export default function TagSettings({
               type="text"
               placeholder="Enter watermark text…"
               value={tagText}
-              onChange={e => setTagText(e.target.value)}
+              onChange={(e) => setTagText(e.target.value)}
             />
             <input
-              type="color" value={tagColor}
-              onChange={e => setTagColor(e.target.value)}
-              style={{ width: 42, height: 42, padding: 2, border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', flexShrink: 0 }}
+              type="color"
+              value={tagColor}
+              onChange={(e) => setTagColor(e.target.value)}
+              style={{
+                width: 42,
+                height: 42,
+                padding: 2,
+                border: '1.5px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
               title="Text color"
             />
           </div>
@@ -114,7 +181,7 @@ export default function TagSettings({
       <div>
         <label className="form-label">Tag Position</label>
         <div className="position-grid">
-          {positions.map(p => (
+          {positions.map((p) => (
             <button
               key={p.id}
               className={`position-btn ${p.span2 ? 'span-2' : ''} ${position === p.id ? 'active' : ''}`}
@@ -132,7 +199,13 @@ export default function TagSettings({
       <div>
         <label className="form-label">Size</label>
         <div className="slider-row">
-          <input type="range" min="5" max="100" value={scale} onChange={e => setScale(e.target.value)} />
+          <input
+            type="range"
+            min="5"
+            max="100"
+            value={scale}
+            onChange={(e) => setScale(e.target.value)}
+          />
           <span className="slider-val">{scale}%</span>
         </div>
       </div>
@@ -141,7 +214,13 @@ export default function TagSettings({
       <div>
         <label className="form-label">Opacity</label>
         <div className="slider-row">
-          <input type="range" min="0" max="100" value={tagOpacity} onChange={e => setTagOpacity(e.target.value)} />
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={tagOpacity}
+            onChange={(e) => setTagOpacity(e.target.value)}
+          />
           <span className="slider-val">{tagOpacity}%</span>
         </div>
       </div>

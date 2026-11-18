@@ -1,61 +1,54 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import { UploadCloud, X, Plus } from 'lucide-react';
-import { getApiUrl, getErrorMessage } from '../config';
 
 export default function ImageUpload({ images, setImages }) {
-  const [isDragging, setIsDragging]   = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  const uploadFiles = async (files) => {
+  const uploadFiles = (files) => {
     if (!files?.length) return;
     setIsUploading(true);
 
-    const valid = Array.from(files).filter(f =>
-      ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(f.type)
+    const valid = Array.from(files).filter((f) =>
+      ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(f.type) ||
+      /\.(jpe?g|png|webp)$/i.test(f.name)
     );
-    if (!valid.length) { setIsUploading(false); setIsDragging(false); return; }
+
+    if (!valid.length) {
+      setIsUploading(false);
+      setIsDragging(false);
+      return;
+    }
 
     try {
-      const BATCH = 50;
-      let latest = [];
-      for (let i = 0; i < valid.length; i += BATCH) {
-        const fd = new FormData();
-        valid.slice(i, i + BATCH).forEach(f => fd.append('images', f));
-        const res  = await fetch(getApiUrl('/api/upload-images'), { method: 'POST', body: fd });
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          let msg = `Server error (Status ${res.status})`;
-          try {
-            const data = JSON.parse(text);
-            if (data.error) msg = data.error;
-          } catch {
-            if (text && text.length < 200 && !text.includes('<!DOCTYPE')) {
-              msg = text;
-            }
-          }
-          throw new Error(msg);
-        }
-        const data = await res.json();
-        if (data.images) latest = data.images;
-      }
-      if (latest.length) setImages(latest);
+      const newItems = valid.map((file) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}-${file.name}`,
+        file,
+        originalName: file.name,
+        filename: file.name,
+        previewUrl: URL.createObjectURL(file),
+        size: file.size,
+        type: file.type || 'image/jpeg',
+      }));
+
+      setImages((prev) => [...prev, ...newItems]);
     } catch (err) {
-      console.error(err);
-      alert('Failed to upload images: ' + getErrorMessage(err));
+      console.error('Failed to load image files locally:', err);
+      alert('Failed to load image files. Please try again.');
     } finally {
       setIsUploading(false);
       setIsDragging(false);
     }
   };
 
-  const handleRemove = async (id) => {
-    try {
-      await fetch(getApiUrl('/api/remove-image'), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      });
-      setImages(prev => prev.filter(img => img.id !== id));
-    } catch (err) { console.error(err); }
+  const handleRemove = (id) => {
+    setImages((prev) => {
+      const target = prev.find((img) => img.id === id);
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((img) => img.id !== id);
+    });
   };
 
   return (
@@ -64,31 +57,57 @@ export default function ImageUpload({ images, setImages }) {
       <div
         className={`upload-zone ${isDragging ? 'dragging' : ''}`}
         style={{ padding: images.length ? '28px 32px' : '48px 32px' }}
-        onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-        onDragLeave={e => { e.preventDefault(); setIsDragging(false); }}
-        onDrop={e => { e.preventDefault(); uploadFiles(e.dataTransfer.files); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          setIsDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          uploadFiles(e.dataTransfer.files);
+        }}
         onClick={() => document.getElementById('img-file-input').click()}
       >
         <div className="upload-icon-wrap">
           <UploadCloud size={28} color="#2563eb" />
         </div>
         <p className="upload-title">
-          {isUploading ? 'Uploading…' : 'Drag & drop images here'}
+          {isUploading ? 'Adding images…' : 'Drag & drop images here'}
         </p>
         <p className="upload-hint">
           {isUploading
-            ? 'Please wait while your files are being uploaded'
+            ? 'Preparing your photos for watermark processing'
             : 'or click to browse — JPG, PNG, WEBP supported'}
         </p>
         {isUploading && (
           <div style={{ marginTop: 8 }}>
             <div style={{ width: 180, height: 4, background: '#dbeafe', borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{ height: '100%', background: 'linear-gradient(to right,#2563eb,#60a5fa)', borderRadius: 999, animation: 'progress-bar 3s ease-out forwards' }} />
+              <div
+                style={{
+                  height: '100%',
+                  background: 'linear-gradient(to right,#2563eb,#60a5fa)',
+                  borderRadius: 999,
+                  animation: 'progress-bar 1s ease-out forwards',
+                }}
+              />
             </div>
           </div>
         )}
-        <input id="img-file-input" type="file" multiple accept="image/*" style={{ display: 'none' }}
-          onChange={e => uploadFiles(e.target.files)} />
+        <input
+          id="img-file-input"
+          type="file"
+          multiple
+          accept="image/jpeg,image/png,image/webp,image/jpg"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            uploadFiles(e.target.files);
+            // Reset input value so same files can be re-selected if needed
+            e.target.value = '';
+          }}
+        />
       </div>
 
       {/* Image grid */}
@@ -107,16 +126,22 @@ export default function ImageUpload({ images, setImages }) {
             </button>
           </div>
           <div className="image-grid">
-            {images.map(img => (
+            {images.map((img) => (
               <div key={img.id} className="image-thumb">
                 <img
-                  src={getApiUrl(`/api/uploads/${img.filename}`)}
+                  src={img.previewUrl}
                   alt={img.originalName}
-                  onError={e => { e.target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" fill="%23e2e8f0"><rect width="96" height="96"/></svg>'; }}
+                  onError={(e) => {
+                    e.target.src =
+                      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" fill="%23e2e8f0"><rect width="96" height="96"/></svg>';
+                  }}
                 />
                 <button
                   className="image-thumb-remove"
-                  onClick={e => { e.stopPropagation(); handleRemove(img.id); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemove(img.id);
+                  }}
                   title="Remove"
                 >
                   <X size={11} />
