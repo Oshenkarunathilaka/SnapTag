@@ -121,7 +121,7 @@ export default function Dashboard({ images, setImages }) {
           <h1 className="page-title">Bulk Image Tagger</h1>
           <p className="page-subtitle">Upload images → configure watermark → process & download</p>
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div className="page-header-actions">
           {processStatus === 'done' && zipBlob && (
             <button className="btn btn-success btn-lg" onClick={handleDownload}>
               <Download size={18} /> Download ZIP

@@ -23,10 +23,7 @@ export default function History({ images, setImages }) {
 
   return (
     <div className="dashboard-wrapper animate-fade-in">
-      <div
-        className="dashboard-header"
-        style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-      >
+      <div className="dashboard-header">
         <div>
           <h1
             style={{
@@ -102,10 +99,11 @@ export default function History({ images, setImages }) {
               </span>
             </h4>
             <div
+              className="history-grid"
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-                gap: '16px',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+                gap: '14px',
               }}
             >
               {images.map((img) => (

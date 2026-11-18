@@ -81,24 +81,32 @@ export default function PreviewPanel({
           overflow: 'hidden',
           boxShadow: 'var(--shadow-lg)',
           cursor: dragging ? 'grabbing' : 'crosshair',
-          touchAction: 'none',
+          touchAction: dragging ? 'none' : 'pan-y',
           userSelect: 'none',
         }}
         onPointerDown={(e) => {
-          e.preventDefault();
           setDragging(true);
           updatePosition(e.clientX, e.clientY);
+          if (e.currentTarget.setPointerCapture) {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }
         }}
         onPointerMove={(e) => {
           if (!dragging) return;
           updatePosition(e.clientX, e.clientY);
         }}
-        onPointerUp={() => setDragging(false)}
+        onPointerUp={(e) => {
+          setDragging(false);
+          if (e.currentTarget.releasePointerCapture && e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }
+        }}
         onPointerLeave={() => setDragging(false)}
       >
         <img
           src={baseSrc}
           alt="Base preview"
+          className="preview-base-img"
           style={{ display: 'block', width: '100%', maxHeight: 420, objectFit: 'contain' }}
           draggable={false}
           onLoad={(e) => {
